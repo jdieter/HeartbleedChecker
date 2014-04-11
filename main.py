@@ -27,9 +27,30 @@ from kivy.uix.textinput import TextInput
 from kivy.clock import Clock
 from kivy.uix.image import Image
 from kivy.properties import ObjectProperty
+from threading import Thread
 import ssltest
-import thread
 import sys
+
+class CheckThread(Thread):
+    parent = None
+    stopped = False
+
+    def start(self, parent):
+        self.parent = parent
+        super(CheckThread, self).start()
+
+    def stop(self):
+        self.stopped = True
+
+    def run(self):
+        (server, port) = self.parent.connect_data
+        Clock.schedule_once(self.parent._enable_cancel, 2.0)
+        message_data = ssltest.hit_hb(server, port)
+        if not self.stopped:
+            self.parent.message_data = message_data
+        if not self.stopped:
+            # All Kivy stuff must be changed insided of the main Kivy loop
+            Clock.schedule_once(self.parent.end_check)
 
 class Heartbleed(FloatLayout):
     checking = False
@@ -45,6 +66,7 @@ class Heartbleed(FloatLayout):
     checkbox = None
     connect_data = None
     message_data = None
+    thread = None
 
     GOOD = 0
     VULNERABLE = 1
@@ -63,11 +85,12 @@ class Heartbleed(FloatLayout):
 
     def start(self):
         self.check_button.bind(on_press=self.on_press)
-        self.server.bind(on_text_validate=self.on_press)
+        self.server.bind(on_text_validate=self.on_press, text=self.on_text)
         self._multi_start()
 
     def _multi_start(self, *args):
         self.on_resize(None, self.width, self.height)
+        self.on_text()
 
     def extra_data(self, message):
         return
@@ -94,6 +117,12 @@ class Heartbleed(FloatLayout):
     def set_default(self):
         self.show_message(self.DEFAULT, '')
 
+    def on_text(self, *args):
+        if len(self.server.text) > 0:
+            self.check_button.disabled = False
+        else:
+            self.check_button.disabled = True
+
     def on_resize(self, window, width, height): # There *has* to be a better way to do all this!  Insanity!
         if self.server.line_height != 1:
             self.label._label.render()
@@ -108,12 +137,24 @@ class Heartbleed(FloatLayout):
             Clock.schedule_once(self._multi_start, 0.2) # Surely there must be a better way to get the text input to calculate it's line height
         return
 
+    def _enable_cancel(self, *args):
+        if self.checking:
+            self.check_button.text = "Cancel"
+            self.check_button.disabled = False
+
     def end_check(self, *args):
         (server, port) = self.connect_data
-        (retval, message, verbose) = self.message_data
-        print verbose + message
-        self.show_message(retval, "%s:%i: %s" % (server, port, message))
-        self.extra_data(verbose+message)
+        try:
+            (retval, message, verbose) = self.message_data
+        except:
+            (retval, message, verbose) = (self.INVALID, None, None)
+
+        self.check_button.text = 'Check server'
+        if message is not None:
+            print verbose + message
+            self.show_message(retval, "%s:%i: %s" % (server, port, message))
+            self.extra_data(verbose+message)
+        self.thread = None
         self.connect_data = None
         self.message_data = None
         self.server.text = ""
@@ -122,14 +163,14 @@ class Heartbleed(FloatLayout):
         self._multi_start()
         self.checking = False
 
-    def check_site(self):
-        (server, port) = self.connect_data
-        self.message_data = ssltest.hit_hb(server, port)
-        # All Kivy stuff must be changed insided of the main Kivy loop
-        Clock.schedule_once(self.end_check)
-
     def on_press(self, instance):
         if self.checking:
+            if self.thread is not None:
+                (server, port) = self.connect_data
+                self.thread.stop()
+                self.message_data 
+                self.end_check()
+                self.show_message(self.INVALID, 'Checking %s:%i... Canceled!' % (server, port))
             return
 
         server = self.server.text.strip()
@@ -157,11 +198,16 @@ class Heartbleed(FloatLayout):
         self.check_button.disabled = True
 
         self.show_message(self.DEFAULT, 'Checking %s:%i...' % (server, port))
-        try:
+        #try:
+        if True:
             self.connect_data = (server, port)
-            thread.start_new_thread(self.check_site, ())
-        except:
-            self.show_message(self.INVALID, 'Unable to start new thread to check server')
+            if self.thread is not None:
+                self.end_thread()
+            self.thread = CheckThread()
+            self.thread.daemon = True
+            self.thread.start(self)
+        #except:
+        #    self.show_message(self.INVALID, 'Unable to start new thread to check server')
 
 class HeartbleedApp(App):
     title = 'Heartbleed'
