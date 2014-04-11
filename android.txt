@@ -1,0 +1,3 @@
+title=Heartbleed Checker
+author=Jonathan Dieter <jdieter@lesbg.com>
+orientation=portrait

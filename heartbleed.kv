@@ -1,0 +1,69 @@
+#:kivy 1.0
+#:import kivy kivy
+
+<Heartbleed>:
+    work_box: work_box
+    label: label
+    server: server
+    check_button: check_button
+    label_box: label_box
+    #bgcolor: bgcolor
+    #id: canvas
+
+    canvas:
+        Color:
+            rgb: self.color
+        Rectangle:
+            pos: self.pos
+            texture: self.texture
+            size: self.size
+
+    BoxLayout:
+        padding: '10dp'
+        spacing: '10dp'
+        size_hint: 1, None
+        pos_hint: {'top': 1}
+        height: '70dp'
+        Image:
+            size_hint: None, None
+            size: '50dp', '50dp'
+            source: 'icon.png'
+			mipmap: True
+        Label:
+            height: '50dp'
+            text_size: self.width, None
+            font_size: '24sp'
+            color: (0.1, 0.1, 0.1, .8)
+            text: 'Heartbleed Checker'
+            valign: 'top'
+
+    BoxLayout:
+        id: work_box
+        padding: '10dp'
+        spacing: '10dp'
+        orientation: 'vertical'
+        size_hint: 1, None
+        TextInput:
+            id: server
+            multiline: False
+            font_size: '20sp'
+            hint_text: 'server[:port] (default port 443)'
+        Button:
+            id: check_button
+            font_size: '20sp'
+            text: 'Check server'
+    BoxLayout:
+        padding: '10dp'
+        spacing: '10dp'
+        id: label_box
+        orientation: 'horizontal'
+        size_hint: 1, None
+        top: work_box.top - work_box.height
+        #height: label.height
+        Label:
+            id: label
+            text_size: self.width, None
+            font_size: '18sp'
+            #height: self.texture_size[1]
+            color: (0.4, 0.4, 0.4, 0.7)
+            valign: 'top'
