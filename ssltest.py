@@ -114,20 +114,20 @@ def hit_hb(server, port):
         typ, ver, pay, new_vrb = recvmsg(s)
         vrb += new_vrb
         if typ is None:
-            return (0, 'No heartbeat response received, server likely not vulnerable', vrb)
+            return (0, 'Server is not vulnerable.  It ignored the malformed heartbeat message.', vrb)
 
         if typ == 24:
             vrb += 'Received heartbeat response:\n'
             vrb += hexdump(pay)
             if len(pay) > 3:
-                return (1, 'WARNING: server returned more data than it should - this server is vulnerable!', vrb)
+                return (1, 'WARNING: This server is vulnerable!  It returned extra data after receiving the malformed heartbeat message.', vrb)
             else:
-                return (0, 'Server processed malformed heartbeat, but did not return any extra data.', vrb)
+                return (0, 'Server is not vulnerable.  It did not return extra data after receiving the malformed heartbeat message.', vrb)
 
         if typ == 21:
             vrb += 'Received alert:\n'
             vrb += hexdump(pay)
-            return (0, 'Server returned error, likely not vulnerable', vrb)
+            return (0, 'Server is not vulnerable.  It returned an error after receiving the malformed heartbeat message.', vrb)
 
 def main():
     import sys
