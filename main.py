@@ -120,6 +120,7 @@ class Heartbleed(FloatLayout):
     def on_text(self, *args):
         if self.server.text.find(' ') != -1:
             self.server.text = self.server.text.replace(' ', '')
+        self.server.text = self.server.text.lower()
 
         if len(self.server.text) > 0:
             self.check_button.disabled = False
